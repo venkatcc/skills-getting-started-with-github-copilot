@@ -22,14 +22,30 @@ document.addEventListener("DOMContentLoaded", () => {
 
         const spotsLeft = details.max_participants - details.participants.length;
 
+        // Escape helper to avoid HTML injection
+        const escapeHtml = (str) =>
+          String(str)
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/\"/g, "&quot;")
+            .replace(/'/g, "&#039;");
+
         const participantsHtml = details.participants && details.participants.length
-          ? `<ul class="participants-list">${details.participants.map(p => `<li>${p}</li>`).join("")}</ul>`
+          ? `<ul class="participants-list">${details.participants
+              .map(
+                (p) =>
+                  `<li data-activity="${escapeHtml(name)}" data-email="${escapeHtml(p)}"><span class="participant-name">${escapeHtml(
+                    p
+                  )}</span><button class="remove-participant" aria-label="Remove ${escapeHtml(p)}">&times;</button></li>`
+              )
+              .join("")}</ul>`
           : `<p class="no-participants"><em>No participants yet</em></p>`;
 
         activityCard.innerHTML = `
-          <h4>${name}</h4>
-          <p>${details.description}</p>
-          <p><strong>Schedule:</strong> ${details.schedule}</p>
+          <h4>${escapeHtml(name)}</h4>
+          <p>${escapeHtml(details.description)}</p>
+          <p><strong>Schedule:</strong> ${escapeHtml(details.schedule)}</p>
           <p><strong>Availability:</strong> ${spotsLeft} spots left</p>
           <div class="participants">
             <strong>Participants:</strong>
@@ -72,6 +88,8 @@ document.addEventListener("DOMContentLoaded", () => {
         messageDiv.textContent = result.message;
         messageDiv.className = "success";
         signupForm.reset();
+        // Refresh activities so the newly registered participant appears immediately
+        fetchActivities();
       } else {
         messageDiv.textContent = result.detail || "An error occurred";
         messageDiv.className = "error";
@@ -88,6 +106,46 @@ document.addEventListener("DOMContentLoaded", () => {
       messageDiv.className = "error";
       messageDiv.classList.remove("hidden");
       console.error("Error signing up:", error);
+    }
+  });
+
+  // Delegate clicks for removing participants
+  activitiesList.addEventListener("click", async (event) => {
+    const btn = event.target.closest(".remove-participant");
+    if (!btn) return;
+
+    const li = btn.closest("li");
+    if (!li) return;
+
+    const email = li.dataset.email;
+    const activity = li.dataset.activity;
+    if (!email || !activity) return;
+
+    if (!confirm(`Remove ${email} from ${activity}?`)) return;
+
+    try {
+      const response = await fetch(
+        `/activities/${encodeURIComponent(activity)}/participants?email=${encodeURIComponent(email)}`,
+        { method: "DELETE" }
+      );
+
+      const result = await response.json().catch(() => ({}));
+
+      if (response.ok) {
+        // Refresh activities to reflect change
+        fetchActivities();
+      } else {
+        messageDiv.textContent = result.detail || result.message || "Failed to remove participant";
+        messageDiv.className = "error";
+        messageDiv.classList.remove("hidden");
+        setTimeout(() => messageDiv.classList.add("hidden"), 5000);
+      }
+    } catch (error) {
+      console.error("Error removing participant:", error);
+      messageDiv.textContent = "Failed to remove participant. Please try again.";
+      messageDiv.className = "error";
+      messageDiv.classList.remove("hidden");
+      setTimeout(() => messageDiv.classList.add("hidden"), 5000);
     }
   });
 
